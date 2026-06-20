@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+venv/
+.venv/
+*.egg-info/
+
+# Environment / secrets - never commit real credentials or connection strings
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Docker (local override files sometimes contain machine-specific paths)
+docker-compose.override.yml
+
+# Logs
+*.log
