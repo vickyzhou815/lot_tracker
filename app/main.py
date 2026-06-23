@@ -71,7 +71,17 @@ def health_check() -> dict[str, str]:
 @app.post("/lots", response_model=LotResponse, status_code=201)
 def create_lot(request: CreateLotRequest) -> LotResponse:
     """Create a new lot, entering at a given step and equipment, state=WAITING."""
-    if request.lot_id in store._lots:  # simple existence check for Day 2
+    # Check existence through the Store interface (get_lot), not by
+    # reaching into internal attributes. This is exactly why the
+    # Repository pattern matters in practice: code that pokes at an
+    # implementation detail (like the old in-memory store's _lots
+    # dict) breaks the moment that implementation changes - which is
+    # exactly what happened when we swapped in MySQL.
+    try:
+        store.get_lot(request.lot_id)
+    except LotNotFoundError:
+        pass  # good - lot doesn't exist yet, safe to create
+    else:
         raise HTTPException(status_code=409, detail=f"Lot {request.lot_id} already exists")
 
     store.create_lot(
