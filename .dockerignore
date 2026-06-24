@@ -1,0 +1,11 @@
+# Don't copy these into the image - keeps the image smaller and,
+# critically, keeps .env (real credentials) out of any image we build.
+venv/
+.venv/
+__pycache__/
+*.pyc
+.git/
+.env
+.gitignore
+README.md
+*.tar.gz
