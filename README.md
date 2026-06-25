@@ -30,8 +30,8 @@ rather than overwriting history.
 - [x] REST API (FastAPI) (`app/main.py`, `app/schemas.py`)
 - [x] MySQL persistence (`app/store.py`) - in-memory version kept
       for reference at `app/store_inmemory.py`
-- [x] Containerization (`Dockerfile`, `.dockerignore`)
-- [ ] Metrics + dashboard (Prometheus / Grafana)
+- [x] Containerization (`Dockerfile`, `.dockerignore`, `docker-compose.yml`)
+- [x] Metrics + dashboard (Prometheus / Grafana)
 - [ ] Deployment (AWS EC2)
 
 ## Why this project
@@ -115,34 +115,30 @@ in-memory implementation is kept at `app/store_inmemory.py` for
 reference - both expose the identical `Store` interface, demonstrating
 the repository pattern in practice.
 
-## Running in Docker
-
-Build the image:
+## Running in Docker (app + Prometheus + Grafana)
 
 ```bash
-docker build -t lot-tracking-service .
+docker-compose up -d
 ```
 
-Run it, pointing the container at MySQL running on the host machine
-(Docker Desktop on Mac/Windows exposes the host as `host.docker.internal`;
-the `.env` file's own `DB_HOST=localhost` is only correct when running
-uvicorn directly, not inside a container):
+This builds the app's image and starts three containers together:
 
-```bash
-docker run -d \
-  --name lot-tracker \
-  -p 8000:8000 \
-  --env-file .env \
-  -e DB_HOST=host.docker.internal \
-  lot-tracking-service
-```
+| Service    | URL                          | Notes                                  |
+|------------|------------------------------|-----------------------------------------|
+| app        | http://localhost:8000/docs   | Same FastAPI app as above                |
+| prometheus | http://localhost:9090        | Scrapes `app`'s `/metrics` every 15s     |
+| grafana    | http://localhost:3000        | Login: `admin` / `admin`                 |
 
-Check it's running and view logs:
+The app container connects to MySQL running on the host machine via
+`host.docker.internal` (set in `docker-compose.yml`), since `localhost`
+inside a container refers to the container itself, not the host.
 
-```bash
-docker ps
-docker logs lot-tracker
-```
+Stop everything with `docker-compose down`.
 
-Same `http://localhost:8000/docs` works identically whether the app
-is running directly via uvicorn or inside this container.
+### Metrics
+
+`app/metrics.py` instruments the API with three Prometheus metrics:
+request count and latency (standard for any web service), plus a
+domain-specific `lot_hold_events_total` counter broken down by hold
+reason - mirroring the kind of transaction-time/busy-ratio monitoring
+used in real MES operations.

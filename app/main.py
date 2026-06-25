@@ -30,12 +30,17 @@ from .rules import (
     hold_reason_counts,
     is_stuck,
 )
+from .metrics import setup_metrics, HOLD_EVENTS
 
 app = FastAPI(
     title="Lot Tracking Service",
     description="MES-style wafer lot tracking: step, equipment, and state as independent dimensions.",
     version="0.1.0",
 )
+
+# Wires up the request-tracking middleware and the /metrics endpoint
+# - see app/metrics.py for what this actually does.
+setup_metrics(app)
 
 
 def _to_lot_response(lot_id: str) -> LotResponse:
@@ -115,6 +120,14 @@ def record_event(lot_id: str, request: RecordEventRequest) -> EventResponse:
         )
     except LotNotFoundError:
         raise HTTPException(status_code=404, detail=f"Lot {lot_id} not found")
+
+    # Domain-specific metric: count this hold by its reason code, so
+    # a Grafana dashboard can show "which hold reasons are firing
+    # most often" - the kind of view an MES monitoring platform would
+    # surface to engineers, similar in spirit to the busy-ratio /
+    # transaction-time dashboards mentioned.
+    if event.hold_reason is not None:
+        HOLD_EVENTS.labels(reason=event.hold_reason.value).inc()
 
     return EventResponse(
         event_id=event.event_id,

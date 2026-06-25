@@ -1,0 +1,20 @@
+# prometheus.yml - tells Prometheus what to scrape and how often.
+
+global:
+  # How often Prometheus visits each target's /metrics endpoint and
+  # records what it sees. 15s is Prometheus's own common default -
+  # frequent enough for a responsive dashboard, not so frequent it
+  # creates meaningful overhead for a project this size.
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "lot-tracking-service"
+    static_configs:
+      # "app" here is NOT a typo for localhost - inside the Docker
+      # network that docker-compose creates, containers can reach
+      # each other BY THEIR SERVICE NAME (defined in
+      # docker-compose.yml). Since our FastAPI container's service
+      # name will be "app", Prometheus (running in its own separate
+      # container) reaches it at http://app:8000, the same way your
+      # own Mac uses host.docker.internal to reach back out to itself.
+      - targets: ["app:8000"]
