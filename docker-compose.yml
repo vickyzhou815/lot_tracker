@@ -1,0 +1,59 @@
+# docker-compose.yml - defines and runs multiple containers together
+# as one unit. Each top-level entry under `services:` becomes one
+# container. Compose automatically creates a shared network so these
+# containers can reach each other BY SERVICE NAME (e.g. our Prometheus
+# container reaching "app:8000" - see prometheus.yml's comment on this).
+
+services:
+  app:
+    # build: . tells Compose to build the image from our Dockerfile
+    # in the current folder, rather than pulling a pre-built image
+    # from somewhere - same as our earlier `docker build` command,
+    # just driven from this file now instead of typed by hand.
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Same override we used with `docker run -e` earlier: this app
+      # container needs to reach MySQL running on the actual Mac, not
+      # inside this Docker network, so we override just this one
+      # value from .env.
+      DB_HOST: host.docker.internal
+    # extra_hosts is required on Linux for host.docker.internal to
+    # resolve; on Docker Desktop for Mac it's usually already set up,
+    # but including this line makes the compose file portable to a
+    # Linux host too (relevant later, since our AWS EC2 instance will
+    # run Linux, not macOS).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      # Mount our local prometheus.yml INTO the container at the path
+      # Prometheus expects its config file. ":ro" means read-only -
+      # the container can read this file but can't modify our copy
+      # of it, which is the appropriate direction for a config file.
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - app
+
+  grafana:
+    # means: don't build this from a Dockerfile, just pull a ready-made image from Docker Hub.
+    # grafana/grafana is the official Grafana image
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      # Sets Grafana's admin password directly via environment
+      # variable, so we don't have to click through a "set new
+      # password" wizard on first login. Fine for local development;
+      # a production setup would handle this more carefully (e.g.
+      # via secrets management).
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    depends_on:
+      - prometheus
