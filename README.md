@@ -1,4 +1,4 @@
-# Lot Tracking Service (MES Portfolio Project)
+# Lot Tracking Service
 
 A small backend service for tracking wafer lots moving through a
 semiconductor fab, inspired by real MES (Manufacturing Execution
@@ -21,7 +21,8 @@ rather than overwriting history.
 
 ## Status
 
-🚧 In progress. Currently implemented:
+✅ Core build complete and deployed. All phases implemented and
+verified working end-to-end, including a real deployment to AWS EC2.
 
 - [x] Domain models (`app/models.py`)
 - [x] Rule engine: per-step / per-equipment / per-state time
@@ -32,7 +33,7 @@ rather than overwriting history.
       for reference at `app/store_inmemory.py`
 - [x] Containerization (`Dockerfile`, `.dockerignore`, `docker-compose.yml`)
 - [x] Metrics + dashboard (Prometheus / Grafana)
-- [ ] Deployment (AWS EC2)
+- [x] Deployment (AWS EC2, self-hosted MySQL container)
 
 ## Why this project
 
@@ -121,19 +122,22 @@ the repository pattern in practice.
 docker-compose up -d
 ```
 
-This builds the app's image and starts three containers together:
+This builds the app's image and starts four containers together:
 
 | Service    | URL                          | Notes                                  |
 |------------|------------------------------|-----------------------------------------|
+| mysql      | (internal only)              | Schema auto-created on first run from `mysql-init/01-schema.sql` |
 | app        | http://localhost:8000/docs   | Same FastAPI app as above                |
 | prometheus | http://localhost:9090        | Scrapes `app`'s `/metrics` every 15s     |
 | grafana    | http://localhost:3000        | Login: `admin` / `admin`                 |
 
-The app container connects to MySQL running on the host machine via
-`host.docker.internal` (set in `docker-compose.yml`), since `localhost`
-inside a container refers to the container itself, not the host.
+The app container connects to MySQL via the `mysql` service name
+(Compose's built-in networking resolves service names automatically),
+not `host.docker.internal` - MySQL now runs as its own container
+rather than on the host machine, with data persisted in a named
+volume (`mysql-data`) so it survives container restarts.
 
-Stop everything with `docker-compose down`.
+Stop everything with `docker compose down`.
 
 ### Metrics
 
@@ -142,3 +146,25 @@ request count and latency (standard for any web service), plus a
 domain-specific `lot_hold_events_total` counter broken down by hold
 reason - mirroring the kind of transaction-time/busy-ratio monitoring
 used in real MES operations.
+
+## Deployment (AWS)
+
+Deployed and verified running on an AWS EC2 `t4g.small` instance
+(Ubuntu 24.04, ARM/Graviton2) using the same `docker-compose.yml` as
+local development - no code or config changes needed between local
+and cloud, beyond setting `.env` values for that environment.
+
+Setup summary:
+1. Launch an EC2 instance (Ubuntu 24.04, arm64 AMI to match `t4g`'s
+   Graviton architecture)
+2. Security group: allow SSH (22) from my own IP only, and the
+   app's port (8000) from anywhere; Prometheus/Grafana ports are
+   intentionally not exposed publicly
+3. Install Docker via `https://get.docker.com`
+4. Clone this repo, create `.env` with this environment's database
+   credentials, run `docker compose up -d --build`
+
+The app, once running, is reachable at `http://<instance-public-ip>:8000`.
+This project's instance is not kept running continuously to avoid
+ongoing cost; see commit history and this README for the deployment
+process.
