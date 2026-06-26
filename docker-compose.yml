@@ -5,6 +5,47 @@
 # container reaching "app:8000" - see prometheus.yml's comment on this).
 
 services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      # MYSQL_ROOT_PASSWORD is required by this image on first startup
+      # - it's separate from our app's own DB_USER/DB_PASSWORD below,
+      # similar in spirit to how your Mac's MySQL has a root account
+      # distinct from the 'vicky' app account we created earlier.
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      # A NAMED VOLUME (mysql-data, defined at the bottom of this
+      # file) - Docker manages this storage separately from the
+      # container itself. Without this, recreating the mysql
+      # container (e.g. `docker compose up --build`) would wipe the
+      # database every time, since a fresh container normally starts
+      # with empty storage. The named volume persists independently
+      # of the container's lifecycle - this is the EC2 equivalent of
+      # what your local MySQL install already gave you for free
+      # (data living outside any one running process).
+      - mysql-data:/var/lib/mysql
+      # Mounting our schema file into the special initdb.d path -
+      # see mysql-init/01-schema.sql's comment for how this works.
+      - ./mysql-init:/docker-entrypoint-initdb.d
+    ports:
+      - "3306:3306"
+    healthcheck:
+      # MySQL's container reports "started" well before it's actually
+      # ready to accept connections - the process is running, but the
+      # database engine inside it is still initializing. Without this
+      # healthcheck, "app" could start and try to connect within that
+      # gap and fail. mysqladmin ping is MySQL's own built-in way of
+      # asking "are you actually ready yet", and depends_on below
+      # uses this result rather than just "has the process started".
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   app:
     # build: . tells Compose to build the image from our Dockerfile
     # in the current folder, rather than pulling a pre-built image
@@ -16,18 +57,17 @@ services:
     env_file:
       - .env
     environment:
-      # Same override we used with `docker run -e` earlier: this app
-      # container needs to reach MySQL running on the actual Mac, not
-      # inside this Docker network, so we override just this one
-      # value from .env.
-      DB_HOST: host.docker.internal
-    # extra_hosts is required on Linux for host.docker.internal to
-    # resolve; on Docker Desktop for Mac it's usually already set up,
-    # but including this line makes the compose file portable to a
-    # Linux host too (relevant later, since our AWS EC2 instance will
-    # run Linux, not macOS).
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      # Now pointing at the "mysql" service by its Compose service
+      # name, since MySQL is also a container in this same Compose
+      # network now - no more host.docker.internal needed, since
+      # we're not reaching out to the host machine's MySQL anymore.
+      DB_HOST: mysql
+    depends_on:
+      mysql:
+        # Wait for the healthcheck above to pass, not just for the
+        # mysql container process to start - this is the fix for the
+        # "started but not ready" gap described above.
+        condition: service_healthy
 
   prometheus:
     image: prom/prometheus:latest
@@ -43,8 +83,6 @@ services:
       - app
 
   grafana:
-    # means: don't build this from a Dockerfile, just pull a ready-made image from Docker Hub.
-    # grafana/grafana is the official Grafana image
     image: grafana/grafana:latest
     ports:
       - "3000:3000"
@@ -57,3 +95,10 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: admin
     depends_on:
       - prometheus
+
+# Named volumes are declared here at the top level, then referenced
+# by name in a service's `volumes:` list above. Docker creates and
+# manages the actual storage location on disk for us, separate from
+# any single container's lifecycle.
+volumes:
+  mysql-data:
